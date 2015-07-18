@@ -60,9 +60,9 @@ how long does it take to reapply all of the openpublish operations in 144 blocks
 
 ## preorder operation
 
-there's an issue with people front-running registration operations
+there's an issue with people front-running registration operations that we've known about for some time
 
-we'll have to make a preoreder operation that works similar to namecoin and blockstore
+we'll have to eventually make a preoreder operation that works similar to namecoin and blockstore
 
 blind the sha1 that you're wanting to register, embed that, then wait 3 confirmations before you register
 
@@ -70,11 +70,11 @@ however, I don't think we should implement it just yet...
 
 ## purposefully shipping without preorder so we can figure out process for hardforks and big ammendments
 
-however, I'd like for us to get the rest of the system functioning before creating this operation as I would like to use the oppurtunity to figure out the best way to have a hard fork
+I'd like for us to get the rest of the system functioning before creating this operation as I would like to use the oppurtunity to figure out the best way to have a hard fork
 
 we're bound to be missing something else so we'll have to have hard forks in the future
 
-it will be nice figuring out this process while we have a problem with a known solution, so when we have to fix a problem with an unknown solution, we're better equiped
+it will be nice figuring out this process while we have a problem with a known solution, so when we have to fix a problem with an unknown solution, we're better equiped at rolling out the changes
 
 i imagine that we'll have to update a decent amount of code across a number of repos and language implementations, so we should have a procedure in place for such a moment.
 
@@ -84,6 +84,6 @@ we should create a number of test blocks to use for testing.
 
 that is, the complete block, in hex format, containing all data and all transactions
 
-we can use this to make sure our state engine is work by inputing a few blocks and getting the expected state of the postgres after the sync is complete
+we can use this to make sure our state engine is working by inputing a few blocks and getting the expected state of the postgres after the sync is complete
 
 we can also make sure that rollbacks work
