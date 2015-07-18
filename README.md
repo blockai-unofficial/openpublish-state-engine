@@ -27,6 +27,8 @@ when it finds a ```transfer``` operation
 ```sql
 BEGIN
 # check to see if the person transfering shares has enough
+# reference the previous txid, we need to build a linked list going backwards through every transfer to the point of issue
+INSERT into opendoc_transfers
 # if new owner
 INSERT into opendoc_owners
 # if existing owner
