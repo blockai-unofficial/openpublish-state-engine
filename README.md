@@ -5,13 +5,15 @@ the Open Publish State Engine expects to connect to a bsync compatible client, w
 
 ## how it works
 
-it scans through every single block using the bitcoin json-rpc
+it scans through every single block using the bitcoin json-rpc or some other method
 
-it processes each block and each transaction in order
+it processes each block and each transaction in order and returns an ordered list of openpublish operations
 
-### processTransaction
+once it has an ordered list of openpublish operations, it processes them one-by-one.
 
-when it finds a register operation
+### processOperation
+
+when it finds a ```register``` operation
 
 ```sql
 BEGIN
@@ -20,7 +22,7 @@ INSERT into opendoc_owners
 COMMIT
 ```
   
-when it finds a transfer operation
+when it finds a ```transfer``` operation
 
 ```sql
 BEGIN
@@ -36,7 +38,7 @@ when it finds a register operation on a doc that has been published already, ign
   
 when it finds a transfer where the person doesn't have enough shares, ignore it
 
-should processTransaction be a [postgres procedure?](http://www.postgresql.org/docs/9.3/static/plpgsql-trigger.html#PLPGSQL-TRIGGER-EXAMPLE)
+should processOperation be a [postgres procedure?](http://www.postgresql.org/docs/9.3/static/plpgsql-trigger.html#PLPGSQL-TRIGGER-EXAMPLE)
 
 or should it be written for every language implementation?
   
