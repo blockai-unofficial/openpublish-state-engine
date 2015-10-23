@@ -2,6 +2,8 @@ var openpublish = require('openpublish')
 var opentip = require('openpublish/src/opentip')
 var async = require('async')
 
+var ONE_HUNDRED_MILLION = 100000000
+
 module.exports = function (options) {
   var commonBlockchain = options.commonBlockchain
   var openpublishOperationsStore = options.openpublishOperationsStore
@@ -9,23 +11,52 @@ module.exports = function (options) {
   var blockcastStateEngine = options.blockcastStateEngine || require('blockcast-state-engine')({ commonBlockchain: commonBlockchain })
 
   var getAssetBalance = function (options, callback) {
-    openpublishOperationsStore.findTransfers({sha1: options.sha1}, function (err, existingValidTransfers) {
+    var sha1 = options.sha1
+    openpublishOperationsStore.findTransfers({sha1: sha1}, function (err, existingValidTransfers) {
       if (err) { } // TODO
-      openpublishOperationsStore.findRegistration(options, function (err, existingRegistration) {
+      openpublishOperationsStore.findRegistration({sha1: sha1}, function (err, existingRegistration) {
         if (err) { } // TODO
-        var currentAssetBalance = 0
+        var assetBalance = 0
         if (existingRegistration && existingRegistration.addr === options.assetAddress) {
-          currentAssetBalance += 100000000 // || existingRegistration.value
+          assetBalance += ONE_HUNDRED_MILLION // || existingRegistration.value
         }
         existingValidTransfers.forEach(function (transfer) {
           if (transfer.bitcoinAddress === options.assetAddress) {
-            currentAssetBalance += transfer.assetValue
+            assetBalance += transfer.assetValue
           }
           if (transfer.assetAddress === options.assetAddress) {
-            currentAssetBalance -= transfer.assetValue
+            assetBalance -= transfer.assetValue
           }
         })
-        callback(false, currentAssetBalance)
+        callback(false, assetBalance)
+      })
+    })
+  }
+
+  var getCapitalizationTable = function (options, callback) {
+    var sha1 = options.sha1
+    var capTable = {}
+    var modifyTable = function (address, value) {
+      if (!capTable[address]) {
+        capTable[address] = value
+      } else {
+        capTable[address] += value
+      }
+    }
+    openpublishOperationsStore.findTransfers({sha1: sha1}, function (err, existingValidTransfers) {
+      if (err) { } // TODO
+      openpublishOperationsStore.findRegistration({sha1: sha1}, function (err, existingRegistration) {
+        if (err) { } // TODO
+        modifyTable(existingRegistration.addr, ONE_HUNDRED_MILLION)
+        existingValidTransfers.forEach(function (transfer) {
+          var tip = options.tip
+          if (tip && transfer.blockHeight >= tip.blockHeight) {
+            return
+          }
+          modifyTable(transfer.bitcoinAddress, transfer.assetValue)
+          modifyTable(transfer.assetAddress, -transfer.assetValue)
+        })
+        callback(err, capTable)
       })
     })
   }
@@ -34,7 +65,7 @@ module.exports = function (options) {
     var assetBalances = []
     var assetAddresses = options.assetAddresses
     async.each(assetAddresses, function (assetAddress, next) {
-      getAssetBalance({assetAddress: assetAddress, sha1: options.sha1}, function (err, assetBalance) {
+      getAssetBalance({sha1: options.sha1, assetAddress: assetAddress}, function (err, assetBalance) {
         if (err) { } // TODO
         assetBalances.push(assetBalance)
         next()
@@ -45,52 +76,132 @@ module.exports = function (options) {
     })
   }
 
-  var validateOpenpublishOperation = function (obj, tx, callback) {
-    // As between two conflicting transfers, the one executed first prevails. - http://copyright.gov/title17/92chap2.html
-    if (!obj || !obj.op) {
-      return callback(false)
+  var getOpenTipDividendsPayableTable = function (options, callback) {
+    var dividendsPayableTable = {}
+    var sha1 = options.sha1
+    var modifyTable = function (address, value) {
+      if (!dividendsPayableTable[address]) {
+        dividendsPayableTable[address] = value
+      } else {
+        dividendsPayableTable[address] += value
+      }
     }
-    if (obj.op === 'r' && obj.sha1) {
-      // Registration
-      var newRegistration = openpublish.processRegistration(obj, tx)
-      openpublishOperationsStore.findRegistration({sha1: newRegistration.sha1}, function (err, existingRegistration) {
+    openpublishOperationsStore.findRegistration({sha1: sha1}, function (err, existingRegistration) {
+      if (err) { } // TODO
+      openpublishOperationsStore.findTips({sha1: sha1}, function (err, tips) {
         if (err) { } // TODO
+        async.each(tips, function (tip, next) {
+          getCapitalizationTable({sha1: sha1, tip: tip}, function (err, capTable) {
+            if (err) { } // TODO
+            var tipAmount = tip.tipAmount
+            for (var address in capTable) {
+              var percentage = capTable[address] / ONE_HUNDRED_MILLION
+              var dividendPayable = parseFloat((tipAmount * percentage).toFixed(10))
+              if (existingRegistration.addr === address) {
+                modifyTable(address, -dividendPayable)
+              } else {
+                modifyTable(address, dividendPayable)
+              }
+            }
+            next()
+          })
+        }, function (err) {
+          if (err) { } // TODO
+          openpublishOperationsStore.findDividendPayments({sha1: sha1}, function (err, payments) {
+            payments.forEach(function (payment) {
+              var address = payment.tipDestinationAddresses[0]
+              modifyTable(address, -payment.tipAmount)
+              modifyTable(existingRegistration.addr, payment.tipAmount)
+            })
+            callback(err, dividendsPayableTable)
+          })
+        })
+      })
+    })
+  }
+
+  var validateOpenpublishOperation = function (operation, tx, callback) {
+    // As between two conflicting transfers, the one executed first prevails. - http://copyright.gov/title17/92chap2.html
+    if (!operation || !operation.op) {
+      return callback(false, false)
+    }
+    if (operation.op === 'r' && operation.sha1) {
+      // Registration
+      var newRegistration = openpublish.processRegistration(operation, tx)
+      openpublishOperationsStore.findRegistration({sha1: newRegistration.sha1}, function (err, existingRegistration) {
         // only the first registration is valid
         var valid = !existingRegistration
-        return callback(valid)
+        return callback(err, valid)
       })
-    } else if (obj.op === 't' && obj.sha1 && obj.value > 0) {
+    } else if (operation.op === 't' && operation.sha1 && operation.value > 0) {
       // Transfer
-      var newTransfer = openpublish.processTransfer(obj, tx)
-      getAssetBalance({assetAddress: newTransfer.assetAddress, sha1: newTransfer.sha1}, function (err, currentAssetBalance) {
-        if (err) { } // TODO
-        var valid = currentAssetBalance > newTransfer.assetValue
-        return callback(valid)
+      var newTransfer = openpublish.processTransfer(operation, tx)
+      getAssetBalance({sha1: newTransfer.sha1, assetAddress: newTransfer.assetAddress}, function (err, assetBalance) {
+        var valid = assetBalance > newTransfer.assetValue
+        return callback(err, valid)
       })
     } else {
-      return callback(false)
+      return callback(false, false)
     }
+  }
+
+  var validateOpenTip = function (tip, tx, callback) {
+    if (!tip) {
+      callback(false, false)
+    }
+    var sha1 = tip.openpublishSha1
+    var tipDestinationAddress = tip.tipDestinationAddresses[0]
+    if (!sha1 || !tipDestinationAddress) {
+      callback(false, false)
+    }
+    openpublishOperationsStore.findRegistration({sha1: sha1}, function (err, existingRegistration) {
+      var valid = existingRegistration && existingRegistration.addr === tipDestinationAddress
+      callback(err, valid)
+    })
+  }
+
+  var validateOpenTipDividendPayment = function (tip, tx, callback) {
+    if (!tip) {
+      callback(false, false)
+    }
+    var sha1 = tip.openpublishSha1
+    var tipSourceAddress = tip.tipSourceAddresses[0]
+    var tipDestinationAddress = tip.tipDestinationAddresses[0]
+    if (!sha1 || !tipSourceAddress || !tipDestinationAddress) {
+      callback(false, false)
+    }
+    openpublishOperationsStore.findRegistration({sha1: sha1}, function (err, existingRegistration) {
+      var validSource = existingRegistration && existingRegistration.addr === tipSourceAddress
+      if (!validSource) {
+        return callback(err, validSource)
+      }
+      getCapitalizationTable({sha1: sha1}, function (err, capTable) {
+        var valid = capTable[tipDestinationAddress] && capTable[tipDestinationAddress] > 0
+        callback(err, valid)
+      })
+    })
   }
 
   var processBlockcasts = function (blockcasts, callback) {
     var validOpenpublishOperations = []
     async.each(blockcasts, function (blockcast, next) {
       var tx = blockcast.tx
-      var obj
+      var operation
       try {
-        obj = JSON.parse(blockcast.data)
+        operation = JSON.parse(blockcast.data)
       } catch (e) {
-        obj = false
+        operation = false
         return next()
       }
-      validateOpenpublishOperation(obj, tx, function (valid) {
-        if (obj && valid) {
-          obj.blockId = blockcast.blockId
-          obj.blockTxIndex = blockcast.index
-          obj.txid = tx.txid
-          openpublishOperationsStore.pushOp(obj, function (err, exists) {
+      validateOpenpublishOperation(operation, tx, function (err, valid) {
+        if (!err && operation && valid) {
+          operation.blockId = blockcast.blockId
+          operation.blockTxIndex = blockcast.index
+          operation.blockHeight = blockcast.blockHeight
+          operation.txid = tx.txid
+          openpublishOperationsStore.pushOp(operation, function (err, exists) {
             if (!err && !exists) {
-              validOpenpublishOperations.push(obj)
+              validOpenpublishOperations.push(operation)
             }
             return next()
           })
@@ -115,11 +226,11 @@ module.exports = function (options) {
       },
       onFound: function (err, blockInfo) {
         if (err) { } // TODO
-        if (options.onFound) {
+        if (options.onOperation) {
           var blockcasts = blockInfo.blockcasts
           processBlockcasts(blockcasts, function (err, validOpenpublishOperations) {
             if (err) { } // TODO
-            options.onFound(err, validOpenpublishOperations, blockInfo)
+            options.onOperation(err, validOpenpublishOperations, blockInfo)
           })
         }
       },
@@ -128,21 +239,34 @@ module.exports = function (options) {
           tx: tx
         }, function (err, tip) {
           if (!err && tip) {
-            var sha1 = tip.openpublishSha1
-            var tipDestinationAddress = tip.tipDestinationAddresses[0]
-            // console.log('tip', sha1, tipDestinationAddress)
-            openpublishOperationsStore.findRegistration({sha1: sha1}, function (err, existingRegistration) {
-              // console.log(existingRegistration)
-              if (err) { } // TODO
-              if (existingRegistration && existingRegistration.addr === tipDestinationAddress) {
+            validateOpenTip(tip, tx, function (err, valid) {
+              if (!err && valid) {
+                tip.blockHeight = tx.blockHeight
+                tip.blockId = tx.blockId
+                tip.txid = tx.txid
                 openpublishOperationsStore.pushTip(tip, function (err, exists) {
-                  if (options.onTip && !err && !exists) {
-                    options.onTip(false, tip)
+                  if (options.onTip && !exists) {
+                    options.onTip(err, tip, tx)
                   }
                   next()
                 })
               } else {
-                next()
+                var payment = tip
+                validateOpenTipDividendPayment(payment, tx, function (err, valid) {
+                  if (!err && valid) {
+                    payment.blockHeight = tx.blockHeight
+                    payment.blockId = tx.blockId
+                    payment.txid = tx.txid
+                    openpublishOperationsStore.pushDividendPayment(payment, function (err, exists) {
+                      if (options.onDividendPayment && !exists) {
+                        options.onDividendPayment(err, payment, tx)
+                      }
+                      next()
+                    })
+                  } else {
+                    next()
+                  }
+                })
               }
             })
           } else {
@@ -176,6 +300,11 @@ module.exports = function (options) {
     scanFrom: scanFrom,
     getBlock: getBlock,
     getAssetBalance: getAssetBalance,
-    getBatchAssetBalances: getBatchAssetBalances
+    getBatchAssetBalances: getBatchAssetBalances,
+    getCapitalizationTable: getCapitalizationTable,
+    getOpenTipDividendsPayableTable: getOpenTipDividendsPayableTable,
+    validateOpenpublishOperation: validateOpenpublishOperation,
+    validateOpenTip: validateOpenTip,
+    validateOpenTipDividendPayment: validateOpenTipDividendPayment
   }
 }
