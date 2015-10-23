@@ -1,6 +1,6 @@
 # Open Publish State Engine
 
-This Open Publish state engine reads and validates an ordered list of Open Publish operations from the public access Bitcoin blockchain to compute a state of ownership.
+This [Open Publish](https://github.com/blockai/openpublish) state engine reads and validates an ordered list of Open Publish operations from the public access Bitcoin blockchain to compute a state of ownership.
 
 ## Installation and Use
 
@@ -111,7 +111,7 @@ Should remove all operations, tips and dividend payments for the given ```blockI
 
 The state engine needs to sync to a Bitcoin blockchain. It does this by reading every transaction in every block and validating every operation.
 
-### scanFrom
+### openpublishStateEngine.scanFrom
 
 ```js
 openpublishStateEngine.scanFrom({
@@ -137,7 +137,7 @@ It is possible to start the scan from an arbitrary ```options.blockHeight``` or 
 
 Since anyone can write whatever they want to the Bitcoin blockchain, we need a mechanism that follows a set of rules in order to enforce the validity of claims, as technically valid Open Publish registrations and transfers need to be compared to the existing valid operations.
 
-### validateOpenpublishOperation
+### openpublishStateEngine.validateOpenpublishOperation
 
 ```js
 openpublishStateEngine.validateOpenpublishOperation(operation, tx, function(err, valid) {
@@ -174,7 +174,7 @@ getAssetBalance({sha1: newTransfer.sha1, assetAddress: newTransfer.assetAddress}
 
 Given a document's ```options.sha1``` and a Bitcoin wallet ```options.assetAddress```, we compute current ```assetBalance```.
 
-### getAssetBalance
+### openpublishStateEngine.getAssetBalance
 
 ```js
 openpublishStateEngine.getAssetBalance({sha1: sha1, assetAddress:wallet.address}, function (err, assetBalance) {
@@ -210,7 +210,7 @@ openpublishOperationsStore.findTransfers({sha1: options.sha1}, function (err, ex
 
 We can also compute the full ```capTable``` for a given ```options.sha1```.
 
-### getCapitalizationTable
+### openpublishStateEngine.getCapitalizationTable
 
 ```js
 openpublishStateEngine.getCapitalizationTable({sha1: sha1}, function (err, capTable) {
@@ -231,7 +231,7 @@ Please note that the cap table always sums to default registration value of 100,
 
 ## Validating Open Tips
 
-### validateOpenTip
+### openpublishStateEngine.validateOpenTip
 
 ```js
 openpublishStateEngine.validateOpenTip(tip, tx, function(err, valid) {
@@ -253,7 +253,7 @@ openpublishOperationsStore.findRegistration({sha1: sha1}, function (err, existin
 
 We can compute the dividends that are owed to each asset holder.
 
-### getOpenTipDividendsPayableTable
+### openpublishStateEngine.getOpenTipDividendsPayableTable
 
 ```js
 openpublishStateEngine.getOpenTipDividendsPayableTable({sha1: sha1}, function(err, dividendsPayableTable) {
@@ -308,7 +308,7 @@ openpublishOperationsStore.findDividendPayments({sha1: sha1}, function (err, pay
 
 ## Validating Open Tip Dividend Payments
 
-### validateOpenTipDividendPayment
+### openpublishStateEngine.validateOpenTipDividendPayment
 
 ```js
 openpublishStateEngine.validateOpenTipDividendPayment(payment, tx, function(err, valid) {
