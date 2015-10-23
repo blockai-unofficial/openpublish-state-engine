@@ -191,6 +191,7 @@ test('testnet scanFrom callbacks', function (t) {
     if (err) { } // TODO
     t.equal(registrationCount, 19)
     memOpenpublishOperationsStore.findTips({}, function (err, tips) {
+      if (err) { } // TODO
       t.equal(tips.length, tipCount, 'has one tip')
       t.end()
     })
@@ -555,6 +556,7 @@ test('Alice registers and then transfers to Bob, who then transfers to Charlie, 
         if (err) { } // TODO
         memCommonBlockchain.Blocks.mine()
         memOpenpublishStateEngine.scanFrom({ blockHeight: 0, toBlockHeight: 1 }, function (err, validOpenpublishOperations) {
+          if (err) { } // TODO
           t.equal(validOpenpublishOperations.length, 2, 'should only have 2 valid operations')
 
           openpublish.tip({
@@ -613,6 +615,7 @@ test('Alice registers and then transfers to Bob, who then transfers to Charlie, 
                     t.equal(assetBalancesSum, 100000000, 'should all add up to 100,000,000')
 
                     memOpenpublishOperationsStore.findTips({}, function (err, tips) {
+                      if (err) { } // TODO
                       t.equal(tips.length, 1, 'has one tip')
                       t.end()
                     })
