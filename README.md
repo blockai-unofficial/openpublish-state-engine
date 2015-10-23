@@ -111,6 +111,8 @@ Should remove all operations, tips and dividend payments for the given ```blockI
 
 The state engine needs to sync to a Bitcoin blockchain. It does this by reading every transaction in every block and validating every operation.
 
+### scanFrom
+
 ```js
 openpublishStateEngine.scanFrom({
   blockHeight: 0,
@@ -135,15 +137,19 @@ It is possible to start the scan from an arbitrary ```options.blockHeight``` or 
 
 Since anyone can write whatever they want to the Bitcoin blockchain, we need a mechanism that follows a set of rules in order to enforce the validity of claims, as technically valid Open Publish registrations and transfers need to be compared to the existing valid operations.
 
+### validateOpenpublishOperation
+
 ```js
 openpublishStateEngine.validateOpenpublishOperation(operation, tx, function(err, valid) {
   
 })
 ```
 
+### How it works
+
 There are a set of simple conditions for valid registration and transfer operations.
 
-### Register
+#### Register
 
 As per most code related to registering ownership, "between two conflicting transfers, the one executed first prevails if it is recorded".
 
@@ -154,7 +160,7 @@ openpublishOperationsStore.findRegistration({sha1: newRegistration.sha1}, functi
 })
 ```
 
-### Transfer
+#### Transfer
 
 And of course valid transfers are contingent on the balances of the accounts involved.
 
@@ -168,11 +174,15 @@ getAssetBalance({sha1: newTransfer.sha1, assetAddress: newTransfer.assetAddress}
 
 Given a document's ```options.sha1``` and a Bitcoin wallet ```options.assetAddress```, we compute current ```assetBalance```.
 
+### getAssetBalance
+
 ```js
 openpublishStateEngine.getAssetBalance({sha1: sha1, assetAddress:wallet.address}, function (err, assetBalance) {
 
 })
 ```
+
+### How it works
 
 Balances are computed by a sum of all related transactions for the asset and account in question.
 
@@ -200,6 +210,8 @@ openpublishOperationsStore.findTransfers({sha1: options.sha1}, function (err, ex
 
 We can also compute the full ```capTable``` for a given ```options.sha1```.
 
+### getCapitalizationTable
+
 ```js
 openpublishStateEngine.getCapitalizationTable({sha1: sha1}, function (err, capTable) {
   // capTable object
@@ -211,17 +223,23 @@ openpublishStateEngine.getCapitalizationTable({sha1: sha1}, function (err, capTa
 })
 ```
 
+### How it works
+
 The cap table is computed by iterating over all valid transactions including the intial registration.
 
 Please note that the cap table always sums to default registration value of 100,000,000.
 
 ## Validating Open Tips
 
+### validateOpenTip
+
 ```js
 openpublishStateEngine.validateOpenTip(tip, tx, function(err, valid) {
   
 })
 ```
+
+### How it works
 
 Valid tips need to be directed to the original account with the matching ```sha1``` registration.
 
@@ -235,6 +253,8 @@ openpublishOperationsStore.findRegistration({sha1: sha1}, function (err, existin
 
 We can compute the dividends that are owed to each asset holder.
 
+### getOpenTipDividendsPayableTable
+
 ```js
 openpublishStateEngine.getOpenTipDividendsPayableTable({sha1: sha1}, function(err, dividendsPayableTable) {
   // dividendsPayableTable object
@@ -244,6 +264,8 @@ openpublishStateEngine.getOpenTipDividendsPayableTable({sha1: sha1}, function(er
   }
 }
 ```
+
+### How it works
 
 We do this by looking at each Open Tip and computing the cap table at the time the tip was mined. This means that different tips for the same ```sha1``` could have different cap tables.
 
@@ -271,13 +293,30 @@ for (var address in capTable) {
 }
 ```
 
+Followed by accounting for all existing dividend payments.
+
+```js
+openpublishOperationsStore.findDividendPayments({sha1: sha1}, function (err, payments) {
+  payments.forEach(function (payment) {
+    var address = payment.tipDestinationAddresses[0]
+    modifyTable(address, -payment.tipAmount)
+    modifyTable(existingRegistration.addr, payment.tipAmount)
+  })
+  callback(err, dividendsPayableTable)
+})
+```
+
 ## Validating Open Tip Dividend Payments
+
+### validateOpenTipDividendPayment
 
 ```js
 openpublishStateEngine.validateOpenTipDividendPayment(payment, tx, function(err, valid) {
   
 })
 ```
+
+### How it works
 
 Valid dividend payments need to be directed to one of the addresses in the cap table while coming from the registration address.
 
