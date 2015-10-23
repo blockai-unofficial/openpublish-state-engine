@@ -1,17 +1,17 @@
 {
   "name": "openpublish-state-engine",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Open Publish State Engine",
   "main": "index.js",
   "dependencies": {
     "async": "^1.4.2",
     "bitcoind-rpc": "^0.3.1",
     "bitcoinjs-lib": "^1.5.8",
-    "blockcast-state-engine": "^1.4.0",
-    "mem-common-blockchain": "^1.0.0",
+    "blockcast-state-engine": "^1.6.0",
+    "mem-common-blockchain": "^1.2.0",
     "node-env-file": "^0.1.7",
-    "openpublish": "^2.4.0",
-    "rpc-common-blockchain": "^1.5.0",
+    "openpublish": "^2.5.0",
+    "rpc-common-blockchain": "^1.6.0",
     "tape": "^4.2.0"
   },
   "devDependencies": {

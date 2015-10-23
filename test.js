@@ -5,12 +5,50 @@ var testCommonWallet = require('test-common-wallet')
 var fs = require('fs')
 var File = require('file-api').File
 
+var sum = function (a, b) { return a + b }
+
 var createOpenPublishStore = function () {
   var __validOpenpublishOperations = []
+  var __validOpenTips = []
   return {
-    put: function (openpublishOperation, callback) {
-      __validOpenpublishOperations.push(openpublishOperation)
-      callback(false, true)
+    pushOp: function (openpublishOperation, callback) {
+      var exists
+      __validOpenpublishOperations.forEach(function (op) {
+        if (openpublishOperation.txid === op.txid) {
+          exists = true
+        }
+      })
+      if (!exists) {
+        __validOpenpublishOperations.push(openpublishOperation)
+      }
+      callback(false, exists)
+    },
+    pushTip: function (tip, callback) {
+      var exists
+      __validOpenTips.forEach(function (t) {
+        if (tip.txid === t.txid) {
+          exists = true
+        }
+      })
+      if (!exists) {
+        __validOpenTips.push(tip)
+      }
+      callback(false, exists)
+    },
+    findTips: function (options, callback) {
+      var matchingTips = []
+      __validOpenTips.forEach(function (tip) {
+        if (options.sha1 && options.sha1 === tip.openpublishSha1) {
+          matchingTips.push(tip)
+        } else if (options.destinationAddress && tip.tipDestinationAddresses.indexOf(options.destinationAddress) > -1) {
+          matchingTips.push(tip)
+        } else if (options.sourceAddress && tip.tipSourceAddresses.indexOf(options.sourceAddress) > -1) {
+          matchingTips.push(tip)
+        } else {
+          matchingTips.push(tip)
+        }
+      })
+      callback(false, matchingTips)
     },
     findTransfers: function (options, callback) {
       var matchingOperations = []
@@ -39,8 +77,8 @@ var createOpenPublishStore = function () {
       })
       return callback(false, registration)
     },
-    all: function (callback) {
-      callback(false, __validOpenpublishOperations)
+    latest: function (callback) {
+      callback(false, __validOpenpublishOperations[__validOpenpublishOperations.length - 1])
     }
   }
 }
@@ -87,7 +125,7 @@ var createRandomFile = function (options, callback) {
   })
 }
 
-test('scanFrom', function (t) {
+test('testnet scanFrom', function (t) {
   var memOpenpublishOperationsStore = createOpenPublishStore()
   var openpublishStateEngine = require('./')({
     commonBlockchain: commonBlockchain,
@@ -103,16 +141,59 @@ test('scanFrom', function (t) {
   })
 })
 
-test('getBlock', function (t) {
+test('testnet getBlock', function (t) {
   var memOpenpublishOperationsStore = createOpenPublishStore()
   var openpublishStateEngine = require('./')({
     commonBlockchain: commonBlockchain,
     openpublishOperationsStore: memOpenpublishOperationsStore
   })
-  openpublishStateEngine.getBlock('0000000000003585e8d4a23ec784dc845f28cc8bc0950fc68a6bc5863a10f578', function (err, validOpenpublishOperations) {
+  openpublishStateEngine.getBlock({blockId: '0000000000003585e8d4a23ec784dc845f28cc8bc0950fc68a6bc5863a10f578'}, function (err, validOpenpublishOperations) {
     if (err) { } // TODO
     t.equal(validOpenpublishOperations.length, 1)
     t.end()
+  })
+})
+
+test('testnet scanFrom callbacks', function (t) {
+  var memOpenpublishOperationsStore = createOpenPublishStore()
+  var openpublishStateEngine = require('./')({
+    commonBlockchain: commonBlockchain,
+    openpublishOperationsStore: memOpenpublishOperationsStore
+  })
+  var registrationCount = 0
+  var tipCount = 0
+  openpublishStateEngine.scanFrom({
+    blockHeight: 574900,
+    toBlockHeight: 575000,
+    onBlock: function (err, blockInfo) {
+      if (err) { } // TODO
+      var blockHeight = blockInfo.blockHeight
+      if (blockHeight % 100 === 0) {
+        process.stdout.write(blockHeight.toString())
+      }
+      process.stdout.write('.')
+    },
+    onFound: function (err, validOpenpublishOperations, blockInfo) {
+      if (err) { } // TODO
+      validOpenpublishOperations.forEach(function (op) {
+        if (op.op === 'r') {
+          registrationCount++
+        }
+        process.stdout.write(op.op)
+      })
+    },
+    onTip: function (err, tip) {
+      if (err) { } // TODO
+      tipCount++
+      process.stdout.write('t')
+    }
+  }, function (err, status) {
+    if (err) { } // TODO
+    t.equal(registrationCount, 19)
+    memOpenpublishOperationsStore.findTips({}, function (err, tips) {
+      t.equal(tips.length, tipCount, 'has one tip')
+      t.end()
+    })
   })
 })
 
@@ -151,6 +232,8 @@ test('Alice registers and then Bob registers the same sha1', function (t) {
       commonBlockchain: memCommonBlockchain
     }, function (err, receipt) {
       if (err) { } // TODO
+      var registerData = receipt.data
+      var sha1 = registerData.sha1
 
       createRandomFile({string: randomString, fileName: 'random.txt'}, function (path) {
         var randomFile = new File(path)
@@ -171,7 +254,20 @@ test('Alice registers and then Bob registers the same sha1', function (t) {
             if (err) { } // TODO
             var registration = validOpenpublishOperations[0]
             t.equal(registration.addr, memAliceWallet.address, 'Alice registered first')
-            t.end()
+            memOpenpublishStateEngine.getBatchAssetBalances({
+              assetAddresses: [memAliceWallet.address, memBobWallet.address],
+              sha1: sha1
+            }, function (err, assetBalances) {
+              if (err) { } // TODO
+
+              var aliceBalance = assetBalances[0]
+              var bobBalance = assetBalances[1]
+              t.equal(aliceBalance, 100000000, 'Alice should have 100,000,000')
+              t.equal(bobBalance, 0, 'Bob should have 0')
+              var assetBalancesSum = assetBalances.reduce(sum)
+              t.equal(assetBalancesSum, 100000000, 'should all add up to 100,000,000')
+              t.end()
+            })
           })
         })
       })
@@ -254,7 +350,21 @@ test('Alice registers, makes a valid transfer to Bob and then tries to transfer 
             var registration = validOpenpublishOperations[0]
             var transfer = validOpenpublishOperations[1]
             t.equal(registration.sha1, transfer.sha1, 'registration and transfer refer to same sha1')
-            t.end()
+
+            memOpenpublishStateEngine.getBatchAssetBalances({
+              assetAddresses: [memAliceWallet.address, memBobWallet.address],
+              sha1: sha1
+            }, function (err, assetBalances) {
+              if (err) { } // TODO
+
+              var aliceBalance = assetBalances[0]
+              var bobBalance = assetBalances[1]
+              t.equal(aliceBalance, 99950000, 'Alice should have 99,950,000')
+              t.equal(bobBalance, 50000, 'Bob should have 50,000')
+              var assetBalancesSum = assetBalances.reduce(sum)
+              t.equal(assetBalancesSum, 100000000, 'should all add up to 100,000,000')
+              t.end()
+            })
           })
         })
       })
@@ -358,7 +468,23 @@ test('Alice registers and then transfers to Bob, who then transfers to Charlie, 
               var transferBobToCharlie = validOpenpublishOperations[2]
               t.equal(registration.sha1, transferAliceToBob.sha1, 'registration and transfer refer to same sha1')
               t.equal(registration.sha1, transferBobToCharlie.sha1, 'registration and transfer refer to same sha1')
-              t.end()
+
+              memOpenpublishStateEngine.getBatchAssetBalances({
+                assetAddresses: [memAliceWallet.address, memBobWallet.address, memCharlieWallet.address],
+                sha1: sha1
+              }, function (err, assetBalances) {
+                if (err) { } // TODO
+
+                var aliceBalance = assetBalances[0]
+                var bobBalance = assetBalances[1]
+                var charlieBalance = assetBalances[2]
+                t.equal(aliceBalance, 99950000, 'Alice should have 99,950,000')
+                t.equal(bobBalance, 20000, 'Bob should have 20,000')
+                t.equal(charlieBalance, 30000, 'Charlie should have 30,000')
+                var assetBalancesSum = assetBalances.reduce(sum)
+                t.equal(assetBalancesSum, 100000000, 'should all add up to 100,000,000')
+                t.end()
+              })
             })
           })
         })
@@ -427,68 +553,69 @@ test('Alice registers and then transfers to Bob, who then transfers to Charlie, 
       }, function (err, receipt) {
         // console.log(receipt)
         if (err) { } // TODO
+        memCommonBlockchain.Blocks.mine()
+        memOpenpublishStateEngine.scanFrom({ blockHeight: 0, toBlockHeight: 1 }, function (err, validOpenpublishOperations) {
+          t.equal(validOpenpublishOperations.length, 2, 'should only have 2 valid operations')
 
-        openpublish.transfer({
-          assetValue: bobToCharlieAssetValue,
-          bitcoinValue: bitcoinValue,
-          ttl: 365,
-          sha1: sha1,
-          assetWallet: memBobWallet,
-          bitcoinWallet: memCharlieWallet,
-          commonBlockchain: memCommonBlockchain
-        }, function (err, receipt) {
-          if (err) { } // TODO
-
-          openpublish.transfer({
-            assetValue: bobToAliceOverValue,
-            bitcoinValue: bitcoinValue,
-            ttl: 365,
+          openpublish.tip({
+            destination: memAliceWallet.address,
             sha1: sha1,
-            assetWallet: memBobWallet,
-            bitcoinWallet: memAliceWallet,
+            amount: 10000,
+            commonWallet: memCharlieWallet,
             commonBlockchain: memCommonBlockchain
-          }, function (err, receipt) {
+          }, function (err, tipTx) {
             if (err) { } // TODO
-            memCommonBlockchain.Blocks.mine()
 
-            // the issue is that these transactions that are being created don't have the correct inputs...
-            // they all seem to come from the same place...
-
-            memOpenpublishStateEngine.scanFrom({
-              blockHeight: 0,
-              toBlockHeight: 2
-            }, function (err, validOpenpublishOperations) {
+            openpublish.transfer({
+              assetValue: bobToCharlieAssetValue,
+              bitcoinValue: bitcoinValue,
+              ttl: 365,
+              sha1: sha1,
+              assetWallet: memBobWallet,
+              bitcoinWallet: memCharlieWallet,
+              commonBlockchain: memCommonBlockchain
+            }, function (err, receipt) {
               if (err) { } // TODO
 
-              t.equal(validOpenpublishOperations.length, 4, 'should only have 4 valid operations')
-              var registration = validOpenpublishOperations[0]
-              var sha1 = registration.sha1
-              var transferAliceToBob = validOpenpublishOperations[1]
-              var transferBobToCharlie = validOpenpublishOperations[2]
-              var transferBobToAlice = validOpenpublishOperations[3]
-              memOpenpublishStateEngine.getCurrentAssetBalance({
-                assetAddress: memAliceWallet.address,
-                sha1: sha1
-              }, function (err, aliceBalance) {
+              openpublish.transfer({
+                assetValue: bobToAliceOverValue,
+                bitcoinValue: bitcoinValue,
+                ttl: 365,
+                sha1: sha1,
+                assetWallet: memBobWallet,
+                bitcoinWallet: memAliceWallet,
+                commonBlockchain: memCommonBlockchain
+              }, function (err, receipt) {
                 if (err) { } // TODO
+                memCommonBlockchain.Blocks.mine()
 
-                memOpenpublishStateEngine.getCurrentAssetBalance({
-                  assetAddress: memBobWallet.address,
-                  sha1: sha1
-                }, function (err, bobBalance) {
+                memOpenpublishStateEngine.scanFrom({
+                  blockHeight: 0,
+                  toBlockHeight: 3
+                }, function (err, validOpenpublishOperations) {
                   if (err) { } // TODO
 
-                  memOpenpublishStateEngine.getCurrentAssetBalance({
-                    assetAddress: memCharlieWallet.address,
+                  t.equal(validOpenpublishOperations.length, 2, 'should only have 2 valid operations')
+
+                  memOpenpublishStateEngine.getBatchAssetBalances({
+                    assetAddresses: [memAliceWallet.address, memBobWallet.address, memCharlieWallet.address],
                     sha1: sha1
-                  }, function (err, charlieBalance) {
+                  }, function (err, assetBalances) {
                     if (err) { } // TODO
 
-                    t.equal(aliceBalance + bobBalance + charlieBalance, 100000000, 'should all add up to 100,000,000')
-                    t.equal(transferAliceToBob.sha1, sha1, 'registration and transfer refer to same sha1')
-                    t.equal(transferBobToCharlie.sha1, sha1, 'registration and transfer refer to same sha1')
-                    t.equal(transferBobToAlice.sha1, sha1, 'registration and transfer refer to same sha1')
-                    t.end()
+                    var aliceBalance = assetBalances[0]
+                    var bobBalance = assetBalances[1]
+                    var charlieBalance = assetBalances[2]
+                    t.equal(aliceBalance, 99960000, 'Alice should have 99,960,000')
+                    t.equal(bobBalance, 10000, 'Bob should have 10,000')
+                    t.equal(charlieBalance, 30000, 'Charlie should have 30,000')
+                    var assetBalancesSum = assetBalances.reduce(sum)
+                    t.equal(assetBalancesSum, 100000000, 'should all add up to 100,000,000')
+
+                    memOpenpublishOperationsStore.findTips({}, function (err, tips) {
+                      t.equal(tips.length, 1, 'has one tip')
+                      t.end()
+                    })
                   })
                 })
               })
