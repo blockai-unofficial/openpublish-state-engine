@@ -19,8 +19,6 @@ Open Publish adheres to the [Common Blockchain](https://github.com/blockai/abstr
 
 It is recommended to have bitcoind running locally to the state engine and to use [```rpc-common-blockchain```](https://github.com/blockai/rpc-common-blockchain) in production.
 
-If you can't run bitcoind in production, Blockai runs a public-access Open Publish web service. Please see [```openpublish-state```](https://github.com/blockai/openpublish-state) for more information.
-
 ## Open Publish Operations Store
 
 The Open Publish state engine need a place to store and query valid registration and transfer operations as well as a place to store valid tips.
